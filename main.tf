@@ -1,0 +1,3 @@
+locals {
+  hello = var.name
+}
