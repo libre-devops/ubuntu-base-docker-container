@@ -12,9 +12,6 @@ param (
     [string[]] $AdditionalTags = @("latest", (Get-Date -Format "yyyy-MM"))
 )
 
-
-Set-Location $WorkingDirectory
-
 try
 {
     if (Get-Command Set-PSRepository -ErrorAction SilentlyContinue)
