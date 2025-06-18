@@ -13,12 +13,8 @@ param (
 )
 
 
-# switch to working folder
 Set-Location $WorkingDirectory
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 0.  Make sure PSGallery is trusted
-# ────────────────────────────────────────────────────────────────────────────────
 try
 {
     if (Get-Command Set-PSRepository -ErrorAction SilentlyContinue)
@@ -45,10 +41,8 @@ catch
     exit 1
 }
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 1.  Install required module(s)
-# ────────────────────────────────────────────────────────────────────────────────
-$Modules = @('LibreDevOpsHelpers')   # add more names here if required
+
+$Modules = @('LibreDevOpsHelpers')
 
 foreach ($mod in $Modules)
 {
@@ -71,9 +65,6 @@ foreach ($mod in $Modules)
     }
 }
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 2.  Verify _LogMessage is now available
-# ────────────────────────────────────────────────────────────────────────────────
 if (Get-Command _LogMessage -ErrorAction SilentlyContinue)
 {
     _LogMessage INFO "✅ LibreDevOpsHelpers (and _LogMessage) loaded" -InvocationName $MyInvocation.MyCommand.Name

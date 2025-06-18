@@ -9,7 +9,7 @@ on:
       working_directory:
         type: string
         description: What working directory should be passed to the script
-        default: "."
+        default: "github_workspace"
       build_context:
         type: string
         description: "The context of the build"
