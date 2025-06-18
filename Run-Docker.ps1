@@ -27,8 +27,8 @@ if (-not $ImageOrg) { $ImageOrg = $RegistryUsername }
 $DockerImageName = "{0}/{1}/{2}" -f $RegistryUrl, $ImageOrg, $DockerImageName
 
 # convert booleans
-$DebugMode       = Convert-ToBoolean $DebugMode
-$PushDockerImage = Convert-ToBoolean $PushDockerImage
+$DebugMode       = ConvertTo-Boolean $DebugMode
+$PushDockerImage = ConvertTo-Boolean $PushDockerImage
 if ($DebugMode) { $DebugPreference = "Continue" }
 
 # build
