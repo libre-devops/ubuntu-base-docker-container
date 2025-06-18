@@ -60,7 +60,7 @@ $DockerFilePath = Join-Path $BuildContext $DockerFileName
 
 # ───────────────────────── docker build ───────────────────────────────────────
 Check-DockerExists
-if (-not (Build-DockerImage -Path $BuildContext -DockerFile $DockerFilePath -ImageName $DockerImageName)) {
+if (-not (Build-DockerImage -ContextPath $BuildContext -DockerFile $DockerFilePath -ImageName $DockerImageName)) {
     Write-Error 'Build failed'; exit 1
 }
 
