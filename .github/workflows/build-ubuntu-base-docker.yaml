@@ -6,14 +6,6 @@ on:
     - cron: '0 0 1 * *'  # This will run at 00:00 on the 1st of every month
   workflow_dispatch:
     inputs:
-      working_directory:
-        type: string
-        description: What working directory should be passed to the script
-        default: "$(Get-Location).Path"
-      build_context:
-        type: string
-        description: "The context of the build"
-        default: "github_workspace"
       docker_image_name:
         type: string
         description: 'Docker Image name?'
@@ -51,17 +43,8 @@ jobs:
         id: run-script
         shell: pwsh
         run: |
-          if ("${{ inputs.working_directory }}" -eq "github_workspace") 
-          {
-            $workingDirectory = "${{ github.workspace }}"
-          }
-          else
-          {
-            $workingDirectory = "${{ inputs.working_directory }}"
-          }
-          
           .\Run-Docker.ps1 `
-            -WorkingDirectory $workingDirectory `
+            -WorkingDirectory ${{ github.workspace }} `
             -BuildContext ${{ github.workspace }} `
             -PushDockerImage ${{ inputs.push_docker_image }} `
             -DebugMode ${{ inputs.enable_debug_mode }} `
