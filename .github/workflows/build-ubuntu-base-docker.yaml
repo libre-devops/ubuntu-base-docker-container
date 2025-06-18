@@ -3,51 +3,51 @@ name: Run Docker – Ubuntu
 # TRIGGERS
 ################################################################################
 on:
-  # Build automatically if any Dockerfile is pushed to main
+  # 1) build automatically when *any* Dockerfile is pushed to main
   push:
     branches: [ main ]
     paths:    [ '**/*Dockerfile' ]
 
-  # Build automatically at 00:00 UTC on the 1st of every month
+  # 2) build automatically at 00:00 UTC on the 1-st of every month
   schedule:
     - cron: '0 0 1 * *'
 
-  # Manual run
+  # 3) manual run
   workflow_dispatch:
     inputs:
       working_directory:
-        description: 'Working directory passed to the script'
+        description: 'Folder the script should cd into'
         type: string
         default: 'containers/ubuntu'
 
       build_context:
         description: 'Docker build context'
         type: string
-        default: 'github_workspace'
+        default: 'github_workspace'      # token → repo root
+
+      docker_file_name:
+        description: 'Path to the Dockerfile (relative to build-context)'
+        type: string
+        default: 'containers/ubuntu/Dockerfile'   # <── key change
 
       docker_image_name:
-        description: 'Docker image name (repo/name)'
+        description: 'Image name (repo/name)'
         type: string
         default: 'ubuntu-base-docker-container/ubuntu-base'
-
-      enable_debug_mode:
-        description: 'Enable -DebugMode in the script'
-        type: boolean
-        default: false
 
       registry_url:
         description: 'Container registry URL'
         type: string
         default: 'ghcr.io'
 
-      docker_file_name:
-        description: 'Dockerfile name'
-        type: string
-        default: 'Dockerfile'
+      enable_debug_mode:
+        description: 'Pass -DebugMode to the script'
+        type: boolean
+        default: false
 
       push_docker_image:
-        description: 'Push image after build?'
-        type: string          # Run-Docker.ps1 expects literal “true/false”
+        description: 'Push image after build?  (true/false string)'
+        type: string
         default: 'true'
 
 ################################################################################
@@ -55,7 +55,7 @@ on:
 ################################################################################
 jobs:
   run-script:
-    name: Run Build Script
+    name: Build & (optionally) push image
     runs-on: ubuntu-latest
 
     defaults:
@@ -63,16 +63,16 @@ jobs:
         shell: pwsh
 
     ########################
-    # 1.  Resolve defaults #
+    # 1.  Resolve inputs   #
     ########################
     env:
       IN_WD:     ${{ github.event.inputs.working_directory  || 'containers/ubuntu' }}
       IN_CTX:    ${{ github.event.inputs.build_context      || 'github_workspace'   }}
+      IN_DF:     ${{ github.event.inputs.docker_file_name   || 'containers/ubuntu/Dockerfile' }}
       IN_IMG:    ${{ github.event.inputs.docker_image_name  || 'ubuntu-base-docker-container/ubuntu-base' }}
+      IN_REG:    ${{ github.event.inputs.registry_url       || 'ghcr.io' }}
       IN_DBG:    ${{ github.event.inputs.enable_debug_mode  || 'false' }}
       IN_PUSH:   ${{ github.event.inputs.push_docker_image  || 'true'  }}
-      IN_DFNAME: ${{ github.event.inputs.docker_file_name   || 'Dockerfile' }}
-      IN_REG:    ${{ github.event.inputs.registry_url       || 'ghcr.io' }}
 
     ########################
     # 2.  Steps            #
@@ -80,24 +80,24 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Build & (optionally) push image
+      - name: Build (and optionally push)
         run: |
-          # ------------------------------------------------------------------
-          # Repo root (absolute path)
-          # ------------------------------------------------------------------
+          # --------------------------------------------------------------
+          # Absolute path to repository root
+          # --------------------------------------------------------------
           $repoRoot = '${{ github.workspace }}'
 
-          # ------------------------------------------------------------------
-          # workingDir  : absolute path to the folder we cd into
-          # contextPath : absolute build context for docker build
-          # ------------------------------------------------------------------
-          if ($Env:IN_WD  -eq 'github_workspace') { $workingDir  = $repoRoot } else { $workingDir  = Join-Path $repoRoot $Env:IN_WD  }
-          if ($Env:IN_CTX -eq 'github_workspace') { $contextPath = $repoRoot } else { $contextPath = Join-Path $repoRoot $Env:IN_CTX }
+          # --------------------------------------------------------------
+          # workingDir  : directory we cd into
+          # contextPath : build context passed to docker build
+          # --------------------------------------------------------------
+          $workingDir  = if ($Env:IN_WD  -eq 'github_workspace') { $repoRoot } else { Join-Path $repoRoot $Env:IN_WD  }
+          $contextPath = if ($Env:IN_CTX -eq 'github_workspace') { $repoRoot } else { Join-Path $repoRoot $Env:IN_CTX }
 
           ./Run-Docker.ps1 `
             -WorkingDirectory $workingDir `
             -BuildContext     $contextPath `
-            -DockerFileName   $Env:IN_DFNAME `
+            -DockerFileName   $Env:IN_DF `
             -DockerImageName  $Env:IN_IMG `
             -RegistryUrl      $Env:IN_REG `
             -RegistryUsername '${{ secrets.RegistryUsername }}' `
