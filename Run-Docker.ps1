@@ -16,6 +16,9 @@ param (
 # switch to working folder
 Set-Location $WorkingDirectory
 
+# ────────────────────────────────────────────────────────────────────────────────
+# 0.  Make sure PSGallery is trusted
+# ────────────────────────────────────────────────────────────────────────────────
 try
 {
     if (Get-Command Set-PSRepository -ErrorAction SilentlyContinue)
@@ -32,17 +35,9 @@ try
     }
     else
     {
-        throw 'PowerShellGet / PSResourceGet not found.'
+        throw '❌ Neither PowerShellGet nor PSResourceGet is available.'
     }
-
-    if (Get-Command _LogMessage -ErrorAction SilentlyContinue)
-    {
-        _LogMessage INFO "✅ PSGallery is trusted" -InvocationName $MyInvocation.MyCommand.Name
-    }
-    else
-    {
-        Write-Host "✅ PSGallery is trusted" -ForegroundColor Green
-    }
+    Write-Host "✅ PSGallery is trusted"
 }
 catch
 {
@@ -50,6 +45,11 @@ catch
     exit 1
 }
 
+# ────────────────────────────────────────────────────────────────────────────────
+# 1.  Install required module(s)
+# ────────────────────────────────────────────────────────────────────────────────
+$Modules = @('LibreDevOpsHelpers')   # add more names here if required
+
 foreach ($mod in $Modules)
 {
     try
@@ -57,21 +57,11 @@ foreach ($mod in $Modules)
         if (-not (Get-Module -ListAvailable -Name $mod))
         {
             Install-Module -Name $mod -Repository PSGallery -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            $msg = "✅ Installed $mod"
+            Write-Host "✅ Installed $mod"
         }
         else
         {
-            $msg = "ℹ️  $mod already present"
-        }
-
-        if (Get-Command _LogMessage -ErrorAction SilentlyContinue)
-        {
-            _LogMessage INFO $msg -InvocationName $MyInvocation.MyCommand.Name
-        }
-        else
-        {
-            Write-Error "Modules don't appear to be imported successfully"
-            throw
+            Write-Host "ℹ️  $mod already present"
         }
     }
     catch
@@ -81,30 +71,19 @@ foreach ($mod in $Modules)
     }
 }
 
-
-
-foreach ($mod in $Modules)
+# ────────────────────────────────────────────────────────────────────────────────
+# 2.  Verify _LogMessage is now available
+# ────────────────────────────────────────────────────────────────────────────────
+if (Get-Command _LogMessage -ErrorAction SilentlyContinue)
 {
-    try
-    {
-        if (-not (Get-Module -ListAvailable -Name $mod))
-        {
-            Install-Module -Name $mod -Repository PSGallery -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            $msg = "✅ Installed $mod"
-        }
-        else
-        {
-            $msg = "ℹ️ $mod already present"
-        }
-
-        _LogMessage INFO $msg -InvocationName $MyInvocation.MyCommand.Name
-    }
-    catch
-    {
-        Write-Error "❌ Failed to install $mod : $_"
-        exit 1
-    }
+    _LogMessage INFO "✅ LibreDevOpsHelpers (and _LogMessage) loaded" -InvocationName $MyInvocation.MyCommand.Name
 }
+else
+{
+    Write-Error "❌ _LogMessage not found after module installation — aborting."
+    exit 1
+}
+
 
 # build full image name
 if (-not $ImageOrg)
