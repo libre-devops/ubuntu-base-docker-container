@@ -3,42 +3,43 @@ name: Run Docker – Ubuntu
 # TRIGGERS
 ################################################################################
 on:
-  # Build automatically when any *.psd1 file is pushed to main
+  # 1. automatic build on push
   push:
     branches: [ main ]
     paths:    [ '**/*Dockerfile' ]
 
-  # Build automatically at 00:00 UTC on the 1 st of every month
+  # 2. automatic build at 00:00 UTC on the 1 st of every month
   schedule:
     - cron: '0 0 1 * *'
 
-  # Manual run
+  # 3. manual build
   workflow_dispatch:
     inputs:
       working_directory:
-        description: 'Working directory passed to the script'
+        description: 'Folder that contains the Dockerfile'
         type: string
         default: 'containers/ubuntu'
 
       build_context:
-        description: 'Docker build context'
+        description: 'Build context (path fed to docker build).  
+                      Use **github_workspace** to point at repository-root.'
         type: string
         default: 'github_workspace'
 
       docker_image_name:
-        description: 'Docker image name (repo/name)'
+        description: 'Image name (`repo/name` – **without** registry/org)'
         type: string
         default: 'ubuntu-base-docker-container/ubuntu-base'
-
-      enable_debug_mode:
-        description: 'Enable -DebugMode in the script'
-        type: boolean
-        default: false
 
       registry_url:
         description: 'Container registry URL'
         type: string
         default: 'ghcr.io'
+
+      enable_debug_mode:
+        description: 'Pass -DebugMode $true  to the helper script'
+        type: boolean
+        default: false
 
       docker_file_name:
         description: 'Dockerfile name'
@@ -46,16 +47,16 @@ on:
         default: 'Dockerfile'
 
       push_docker_image:
-        description: 'Push image after build?'
-        type: string          # Run-Docker.ps1 expects a *string* “true/false”
+        description: 'Push image after build? (true / false)'
+        type: string         # helper script expects *string*
         default: 'true'
 
 ################################################################################
 # JOBS
 ################################################################################
 jobs:
-  run-script:
-    name: Run Build Script
+  build-image:
+    name: Build & (optional) push
     runs-on: ubuntu-latest
 
     defaults:
@@ -63,16 +64,17 @@ jobs:
         shell: pwsh
 
     ########################
-    # 1.  Resolve defaults #
+    # 1.  Resolve inputs   #
     ########################
     env:
-      WD_INPUT:      ${{ github.event.inputs.working_directory     || 'containers/ubuntu' }}
-      CTX_INPUT:     ${{ github.event.inputs.build_context         || 'github_workspace'   }}
-      IMG_INPUT:     ${{ github.event.inputs.docker_image_name     || 'ubuntu-base-docker-container/ubuntu-base' }}
-      DEBUG_INPUT:   ${{ github.event.inputs.enable_debug_mode     || 'false'  }}
-      PUSH_INPUT:    ${{ github.event.inputs.push_docker_image     || 'true'   }}
-      DFNAME_INPUT:  ${{ github.event.inputs.docker_file_name      || 'Dockerfile' }}
-      REGURL_INPUT:  ${{ github.event.inputs.registry_url          || 'ghcr.io' }}
+      # the long expressions ensure usable values for *all* trigger types
+      WD_INPUT:   ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.working_directory)     || 'containers/ubuntu'                                  }}
+      CTX_INPUT:  ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.build_context)         || 'github_workspace'                                   }}
+      IMG_INPUT:  ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.docker_image_name)     || 'ubuntu-base-docker-container/ubuntu-base'           }}
+      REG_INPUT:  ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.registry_url)          || 'ghcr.io'                                            }}
+      DBG_INPUT:  ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.enable_debug_mode)     || 'false'                                              }}
+      PUSH_INPUT: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.push_docker_image)     || 'true'                                               }}
+      DF_INPUT:   ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.docker_file_name)      || 'Dockerfile'                                         }}
 
     ########################
     # 2.  Steps            #
@@ -80,22 +82,22 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Build & (optionally) push image
+      - name: Build & (optional) push image
         run: |
-          # ------------------------------------------------------------------
-          # Resolve working directory / build-context tokens
-          # ------------------------------------------------------------------
-          $wd  = if ($Env:WD_INPUT  -eq 'github_workspace') { '${{ github.workspace }}' } else { $Env:WD_INPUT }
-          $ctx = if ($Env:CTX_INPUT -eq 'github_workspace') { '${{ github.workspace }}' } else { $Env:CTX_INPUT }
+          #-------------------------------------------------------------------
+          # Translate "github_workspace" token → full path to repository root
+          #-------------------------------------------------------------------
+          $workingDir  = if ($Env:WD_INPUT  -eq 'github_workspace') { '${{ github.workspace }}' } else { $Env:WD_INPUT }
+          $contextPath = if ($Env:CTX_INPUT -eq 'github_workspace') { $workingDir                 } else { $Env:CTX_INPUT }
 
           ./Run-Docker.ps1 `
-            -WorkingDirectory $wd `
-            -BuildContext     $ctx `
-            -PushDockerImage  $Env:PUSH_INPUT `
-            -DebugMode        $Env:DEBUG_INPUT `
-            -DockerImageName  $Env:IMG_INPUT `
-            -DockerFileName   $Env:DFNAME_INPUT `
-            -RegistryUrl      $Env:REGURL_INPUT `
-            -RegistryUsername '${{ secrets.RegistryUsername }}' `
-            -RegistryPassword '${{ secrets.RegistryPassword }}' `
-            -ImageOrg         '${{ github.repository_owner }}'
+              -WorkingDirectory $workingDir `
+              -BuildContext     $contextPath `
+              -DockerFileName   $Env:DF_INPUT `
+              -DockerImageName  $Env:IMG_INPUT `
+              -RegistryUrl      $Env:REG_INPUT `
+              -RegistryUsername '${{ secrets.RegistryUsername }}' `
+              -RegistryPassword '${{ secrets.RegistryPassword }}' `
+              -ImageOrg         '${{ github.repository_owner }}' `
+              -PushDockerImage  $Env:PUSH_INPUT `
+              -DebugMode        $Env:DBG_INPUT
