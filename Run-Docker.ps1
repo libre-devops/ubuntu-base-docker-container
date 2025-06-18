@@ -59,7 +59,7 @@ if ($DebugMode) { $DebugPreference = 'Continue' }
 $DockerFilePath = Join-Path $BuildContext $DockerFileName
 
 # ───────────────────────── docker build ───────────────────────────────────────
-Check-DockerExists
+Assert-DockerExists
 if (-not (Build-DockerImage -ContextPath $BuildContext -DockerFile $DockerFilePath -ImageName $DockerImageName)) {
     Write-Error 'Build failed'; exit 1
 }
