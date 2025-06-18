@@ -9,7 +9,7 @@ on:
       working_directory:
         type: string
         description: What working directory should be passed to the script
-        default: "github_workspace"
+        default: "$(Get-Location).Path"
       build_context:
         type: string
         description: "The context of the build"
