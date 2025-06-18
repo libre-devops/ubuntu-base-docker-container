@@ -1,21 +1,6 @@
 <#
 .SYNOPSIS
 Build (and optionally push) a Docker image – GitHub Actions-friendly.
-
-.PARAMETER DockerFileName
-  File name of the Dockerfile, relative to -BuildContext.
-
-.PARAMETER BuildContext
-  Directory to use as docker build context.
-
-  If you pass the literal string **github_workspace** the script substitutes
-  it with "${{ github.workspace }}".
-
-.PARAMETER WorkingDirectory
-  Directory where the script will `Set-Location` before running anything
-  (usually the repo root).
-
-… (all other parameters unchanged)
 #>
 
 param (
@@ -32,68 +17,94 @@ param (
     [string[]] $AdditionalTags = @('latest', (Get-Date -Format 'yyyy-MM'))
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 0.  Trust PSGallery + install LibreDevOpsHelpers
-# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
+# 0.  Trust PSGallery & ensure LibreDevOpsHelpers
+# ────────────────────────────────────────────────────────────────────────────
 try
 {
     if (Get-Command Set-PSRepository -EA SilentlyContinue)
     {
-        if ((Get-PSRepository -Name PSGallery).InstallationPolicy -ne 'Trusted')
+        if ((Get-PSRepository PSGallery).InstallationPolicy -ne 'Trusted')
         {
-            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -EA Stop
+            Set-PSRepository PSGallery -InstallationPolicy Trusted -EA Stop
         }
     }
     elseif (Get-Command Set-PSResourceRepository -EA SilentlyContinue)
     {
-        Set-PSResourceRepository -Name PSGallery -Trusted -EA Stop
+        Set-PSResourceRepository PSGallery -Trusted -EA Stop
     }
     else
     {
-        throw 'Neither PowerShellGet nor PSResourceGet is available.'
+        throw 'Neither PowerShellGet nor PSResourceGet available.'
     }
 
     Write-Host "✅ PSGallery is trusted"
 }
 catch
 {
-    Write-Error "❌ Failed to trust PSGallery: $_"; exit 1
+    Write-Error "❌ $( $_.Exception.Message )"; exit 1
 }
 
 if (-not (Get-Module -ListAvailable -Name LibreDevOpsHelpers))
 {
     try
     {
-        Install-Module LibreDevOpsHelpers -Repository PSGallery `
-            -Scope CurrentUser -AllowClobber -Force -EA Stop
+        Install-Module LibreDevOpsHelpers -Repo PSGallery `
+            -Scope CurrentUser -Force -AllowClobber -EA Stop
         Write-Host "✅ Installed LibreDevOpsHelpers"
     }
     catch
     {
-        Write-Error "❌ Could not install LibreDevOpsHelpers: $_"; exit 1
+        Write-Error "❌ $_"; exit 1
+    }
+}
+Import-Module LibreDevOpsHelpers
+_LogMessage INFO "✅ LibreDevOpsHelpers loaded" -Inv $MyInvocation.MyCommand.Name
+
+# ────────────────────────────────────────────────────────────────────────────
+# 1.  Normalise paths & flags
+# ────────────────────────────────────────────────────────────────────────────
+$RepoRoot = (Resolve-Path $WorkingDirectory).Path
+
+# Normalise BuildContext ----------------------------------------------------
+switch ($BuildContext)
+{
+    'github_workspace' {
+        $BuildContext = $RepoRoot
+    }
+    default {
+        if (-not [IO.Path]::IsPathRooted($BuildContext))
+        {
+            $BuildContext = Join-Path $RepoRoot $BuildContext
+        }
+        $BuildContext = (Resolve-Path $BuildContext).Path
     }
 }
 
-Import-Module LibreDevOpsHelpers
-_LogMessage INFO "✅ LibreDevOpsHelpers (and _LogMessage) loaded" `
-           -InvocationName $MyInvocation.MyCommand.Name
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 1.  Resolve paths & flags
-# ──────────────────────────────────────────────────────────────────────────────
-if ($BuildContext -eq 'github_workspace')
+# Normalise Dockerfile path --------------------------------------------------
+if ( [IO.Path]::IsPathRooted($DockerFileName))
 {
-    $BuildContext = $WorkingDirectory
+    # caller passed an absolute path – ignore BuildContext
+    $DockerfilePath = (Resolve-Path $DockerFileName).Path
 }
-Set-Location $WorkingDirectory
+else
+{
+    $DockerfilePath = Join-Path $BuildContext $DockerFileName
+    $DockerfilePath = (Resolve-Path $DockerfilePath).Path
+}
 
-$DockerfilePath = Join-Path $BuildContext $DockerFileName
+Set-Location $RepoRoot        # stay in repo root for the rest
 
 if (-not $ImageOrg)
 {
     $ImageOrg = $RegistryUsername
 }
-$DockerImageName = '{0}/{1}/{2}' -f $RegistryUrl, $ImageOrg, $DockerImageName
+$DockerImageName = "{0}/{1}/{2}" -f $RegistryUrl, $ImageOrg, $DockerImageName
+if ([string]::IsNullOrWhiteSpace($DockerImageName) -or
+        $DockerImageName -match '\/\/') {
+    Write-Error 'Image name is empty – did you forget -ImageOrg or -RegistryUsername?'
+    exit 1
+}
 
 $DebugMode = ConvertTo-Boolean $DebugMode
 $PushDockerImage = ConvertTo-Boolean $PushDockerImage
@@ -102,43 +113,39 @@ if ($DebugMode)
     $DebugPreference = 'Continue'
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 # 2.  Build
-# ──────────────────────────────────────────────────────────────────────────────
-Assert-DockerExists              # helper from LibreDevOpsHelpers
+# ────────────────────────────────────────────────────────────────────────────
+Assert-DockerExists
+_LogMessage INFO "⏳ Building '$DockerImageName' from $DockerfilePath" `
+           -Inv $MyInvocation.MyCommand.Name
 
-_LogMessage INFO "⏳ Building '$DockerImageName' from Dockerfile: $DockerfilePath" `
-           -InvocationName $MyInvocation.MyCommand.Name
-
-$built = Build-DockerImage `
-           -DockerfilePath $DockerfilePath `
-           -ContextPath    $BuildContext
-
+$built = Build-DockerImage -DockerfilePath $DockerfilePath -ContextPath $BuildContext
 if (-not $built)
 {
     Write-Error '❌ docker build failed'; exit 1
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 # 3.  Tag extras
-# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 foreach ($tag in $AdditionalTags)
 {
-    $fullTag = '{0}:{1}' -f $DockerImageName, $tag
-    _LogMessage INFO "🏷  Tagging: $fullTag" -InvocationName $MyInvocation.MyCommand.Name
+    $fullTag = "{0}:{1}" -f $DockerImageName, $tag
+    _LogMessage INFO "🏷  Tagging $fullTag" -Inv $MyInvocation.MyCommand.Name
     docker tag $DockerImageName $fullTag
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 # 4.  Push (optional)
-# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 if ($PushDockerImage)
 {
-    $fullTags = $AdditionalTags | ForEach-Object { '{0}:{1}' -f $DockerImageName, $_ }
-    if (-not (Push-DockerImage -FullTagNames $fullTags))
+    $tags = $AdditionalTags | ForEach-Object { "{0}:{1}" -f $DockerImageName, $_ }
+    if (-not (Push-DockerImage -FullTagNames $tags))
     {
         Write-Error '❌ docker push failed'; exit 1
     }
 }
 
-_LogMessage INFO '✅ All done.' -InvocationName $MyInvocation.MyCommand.Name
+_LogMessage INFO '✅ All done.' -Inv $MyInvocation.MyCommand.Name
