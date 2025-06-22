@@ -47,8 +47,10 @@ if (-not (Get-Module -ListAvailable -Name LibreDevOpsHelpers)) {
     }
 }
 
-Import-Module LibreDevOpsHelpers
-_LogMessage INFO "✅ LibreDevOpsHelpers loaded" -InvocationName $MyInvocation.MyCommand.Name
+$modInfo = Import-Module LibreDevOpsHelpers -PassThru
+$version = $modInfo.Version.ToString()
+
+_LogMessage INFO "✅ LibreDevOpsHelpers loaded with version - $version" -InvocationName $MyInvocation.MyCommand.Name
 
 #───────────────────────────────────────────────────────────────────────────────
 # 1.  Resolve paths & flags *before* we cd anywhere
